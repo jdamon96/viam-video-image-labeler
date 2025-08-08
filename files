@@ -1,0 +1,237 @@
+// app/globals.css
+:root {
+  --radius: 0px;
+}
+
+// components/annotation-timeline.tsx
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Separator } from "@/components/ui/separator";
+import { useState } from "react";
+import { useVideo } from "@/hooks/use-video";
+import { VideoAnnotation } from "@/types/video";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Slider } from "@/components/ui/slider";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import { DialogHeader, DialogTitle } from "@/components/ui/dialog-header";
+import { DialogDescription } from "@/components/ui/dialog-description";
+import { DialogClose } from "@/components/ui/dialog-close";
+import { DialogFooter } from "@/components/ui/dialog-footer";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/components/ui/use-toast";
+import { toast } from "@/components/ui/use-toast";
+import { useModal } from "@/hooks/use-modal";
+import { Modal } from "@/components/ui/modal";
+import { ModalHeader } from "@/components/ui/modal-header";
+import { ModalTitle } from "@/components/ui/modal-title";
+import { ModalDescription } from "@/components/ui/modal-description";
+import { ModalClose } from "@/components/ui/modal-close";
+import { ModalFooter } from "@/components/ui/modal-footer";
+import { useFrameGrid } from "@/hooks/use-frame-grid";
+import { FrameGrid } from "@/components/ui/frame-grid";
+import { FrameGridItem } from "@/components/ui/frame-grid-item";
+import { useAnnotationTimeline } from "@/hooks/use-annotation-timeline";
+import { AnnotationTimeline } from "@/components/ui/annotation-timeline";
+import { AnnotationTimelineItem } from "@/components/ui/annotation-timeline-item";
+import { AnnotationTimelineScrubBar } from "@/components/ui/annotation-timeline-scrub-bar";
+import { AnnotationTimelineTriangleTrack } from "@/components/ui/annotation-timeline-triangle-track";
+import { AnnotationTimelineClipWrapper } from "@/components/ui/annotation-timeline-clip-wrapper";
+
+const AnnotationTimelineComponent = ({
+  annotations,
+  selectedId,
+  setSelectedId,
+}: {
+  annotations: VideoAnnotation[];
+  selectedId: string | null;
+  setSelectedId: (id: string | null) => void;
+}) => {
+  const { video } = useVideo();
+  const { frameGridItems } = useFrameGrid(video);
+  const { scrubBarValue, setScrubBarValue } = useAnnotationTimeline(
+    annotations,
+    selectedId
+  );
+  const { toast } = useToast();
+  const { isOpen, openModal, closeModal } = useModal();
+
+  const handleScrubBarChange = (value: number[]) => {
+    setScrubBarValue(value[0]);
+  };
+
+  const handleTriangleTrackClick = (id: string) => {
+    setSelectedId(id);
+  };
+
+  const handleClipWrapperClick = (id: string) => {
+    setSelectedId(id);
+  };
+
+  return (
+    <div className="relative h-8 rounded-none border bg-neutral-100">
+      <div className="absolute inset-0 flex items-center justify-center">
+        <Slider
+          value={[scrubBarValue]}
+          onValueChange={handleScrubBarChange}
+          max={video.duration}
+          step={0.1}
+          className="w-full"
+        />
+      </div>
+      <div className="relative mt-2 h-10 rounded-none border bg-white overflow-hidden">
+        {annotations.map((a) => (
+          <div
+            key={a.id}
+            className={cn(
+              "absolute top-1 h-8 rounded-none border cursor-grab active:cursor-grabbing",
+              selectedId === a.id ? "ring-2 ring-emerald-500" : ""
+            )}
+            onClick={() => handleClipWrapperClick(a.id)}
+            style={{
+              left: `${(a.startTime / video.duration) * 100}%`,
+              width: `${((a.endTime - a.startTime) / video.duration) * 100}%`,
+            }}
+          >
+            <div className="absolute inset-0 bg-emerald-500 opacity-50"></div>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="text-sm text-white font-bold">
+                {a.startTime.toFixed(1)}s - {a.endTime.toFixed(1)}s
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+export default AnnotationTimelineComponent;
+
+// components/video-editor.tsx
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Separator } from "@/components/ui/separator";
+import { useState } from "react";
+import { useVideo } from "@/hooks/use-video";
+import { VideoAnnotation } from "@/types/video";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Slider } from "@/components/ui/slider";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import { DialogHeader, DialogTitle } from "@/components/ui/dialog-header";
+import { DialogDescription } from "@/components/ui/dialog-description";
+import { DialogClose } from "@/components/ui/dialog-close";
+import { DialogFooter } from "@/components/ui/dialog-footer";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/components/ui/use-toast";
+import { toast } from "@/components/ui/use-toast";
+import { useModal } from "@/hooks/use-modal";
+import { Modal } from "@/components/ui/modal";
+import { ModalHeader } from "@/components/ui/modal-header";
+import { ModalTitle } from "@/components/ui/modal-title";
+import { ModalDescription } from "@/components/ui/modal-description";
+import { ModalClose } from "@/components/ui/modal-close";
+import { ModalFooter } from "@/components/ui/modal-footer";
+import { useFrameGrid } from "@/hooks/use-frame-grid";
+import { FrameGrid } from "@/components/ui/frame-grid";
+import { FrameGridItem } from "@/components/ui/frame-grid-item";
+import { useAnnotationTimeline } from "@/hooks/use-annotation-timeline";
+import { AnnotationTimeline } from "@/components/ui/annotation-timeline";
+import { AnnotationTimelineItem } from "@/components/ui/annotation-timeline-item";
+import { AnnotationTimelineScrubBar } from "@/components/ui/annotation-timeline-scrub-bar";
+import { AnnotationTimelineTriangleTrack } from "@/components/ui/annotation-timeline-triangle-track";
+import { AnnotationTimelineClipWrapper } from "@/components/ui/annotation-timeline-clip-wrapper";
+
+const VideoEditorComponent = () => {
+  const { video } = useVideo();
+  const { frameGridItems } = useFrameGrid(video);
+  const { annotations, selectedId, setSelectedId } = useAnnotationTimeline(
+    video
+  );
+  const { isOpen, openModal, closeModal } = useModal();
+  const { toast } = useToast();
+
+  const handleColorSwatchClick = (color: string) => {
+    if (selectedId) {
+      const updatedAnnotations = annotations.map((a) =>
+        a.id === selectedId ? { ...a, color } : a
+      );
+      // Update annotations logic here
+      toast({
+        title: "Annotation color updated",
+        description: `The color of annotation ${selectedId} has been updated to ${color}.`,
+      });
+    }
+  };
+
+  return (
+    <div className="relative w-full overflow-hidden rounded-none bg-black">
+      <div className="absolute top-0 left-0 w-full h-full">
+        {/* Video player logic here */}
+      </div>
+      <div className="absolute bottom-0 left-0 w-full flex items-center justify-center">
+        {annotations.map((a) => (
+          <Button
+            key={a.id}
+            className={cn(
+              "h-6 w-6 rounded-none border",
+              annotations.find((a) => a.id === selectedId)?.color === a.color
+                ? "ring-2 ring-offset-1"
+                : ""
+            )}
+            onClick={() => handleColorSwatchClick(a.color)}
+          >
+            {/* Color swatch logic here */}
+          </Button>
+        ))}
+      </div>
+      <div className="absolute top-0 right-0 w-full h-full grid grid-cols-10 grid-rows-10">
+        {frameGridItems.map((item) => (
+          <figure
+            key={item.id}
+            className="rounded-none overflow-hidden border bg-white cursor-zoom-in"
+          >
+            {/* Frame grid item logic here */}
+          </figure>
+        ))}
+      </div>
+      <Modal open={isOpen} onOpenChange={closeModal}>
+        <ModalHeader>
+          <ModalTitle>Annotation Preview</ModalTitle>
+          <ModalDescription>
+            Preview the selected annotation.
+          </ModalDescription>
+        </ModalHeader>
+        <DialogContent>
+          <img
+            src={selectedId ? annotations.find((a) => a.id === selectedId)?.thumbnail : ""}
+            alt="Annotation Preview"
+            className="max-h-[75vh] w-auto rounded-none"
+          />
+        </DialogContent>
+        <ModalFooter>
+          <Button variant="outline" onClick={closeModal}>
+            Close
+          </Button>
+        </ModalFooter>
+      </Modal>
+    </div>
+  );
+};
+
+export default VideoEditorComponent;
