@@ -109,34 +109,46 @@ function createTriangleTracks(annotations: TriangleAnnotation[]): TriangleTrack[
 }
 
 // Helper function to check if a point is inside an equilateral triangle
-function isPointInTriangle(px: number, py: number, triangle: TriangleAnnotation): boolean {
+function isPointInTriangle(px: number, py: number, triangle: TriangleAnnotation, videoWidth: number, videoHeight: number): boolean {
   // Calculate triangle vertices using the same logic as the drawing function
-  const sizePx = triangle.size
-  const triangleHeight = sizePx * Math.sqrt(3) / 2
-  const halfBase = sizePx / 2
+  // Use the smaller dimension for consistent sizing (same as rendering)
+  const minDim = Math.min(videoWidth, videoHeight)
+  const sideLength = triangle.size * minDim
+  
+  // Calculate equilateral triangle geometry
+  const triangleHeight = sideLength * Math.sqrt(3) / 2
+  const halfBase = sideLength / 2
   const centroidOffset = triangleHeight / 3
   
-  // Triangle vertices (normalized coordinates)
-  const ax = triangle.x // Top vertex
-  const ay = triangle.y - (triangleHeight - centroidOffset)
-  const bx = triangle.x - halfBase // Bottom left
-  const by = triangle.y + centroidOffset
-  const cx = triangle.x + halfBase // Bottom right  
-  const cy = triangle.y + centroidOffset
+  // Convert triangle center from normalized to video coordinates
+  const centerX = triangle.x * videoWidth
+  const centerY = triangle.y * videoHeight
+  
+  // Triangle vertices in video coordinates
+  const ax = centerX // Top vertex
+  const ay = centerY - (triangleHeight - centroidOffset)
+  const bx = centerX - halfBase // Bottom left
+  const by = centerY + centroidOffset
+  const cx = centerX + halfBase // Bottom right  
+  const cy = centerY + centroidOffset
+  
+  // Convert click point from normalized to video coordinates
+  const clickX = px * videoWidth
+  const clickY = py * videoHeight
   
   // Use barycentric coordinate system to check if point is inside triangle
   const denom = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
   if (Math.abs(denom) < 1e-10) return false // Degenerate triangle
   
-  const a = ((by - cy) * (px - cx) + (cx - bx) * (py - cy)) / denom
-  const b = ((cy - ay) * (px - cx) + (ax - cx) * (py - cy)) / denom
+  const a = ((by - cy) * (clickX - cx) + (cx - bx) * (clickY - cy)) / denom
+  const b = ((cy - ay) * (clickX - cx) + (ax - cx) * (clickY - cy)) / denom
   const c = 1 - a - b
   
   return a >= 0 && b >= 0 && c >= 0
 }
 
 // Find triangle at the given position that's currently active
-function findTriangleAtPosition(x: number, y: number, currentTime: number, annotations: TriangleAnnotation[]): TriangleAnnotation | null {
+function findTriangleAtPosition(x: number, y: number, currentTime: number, annotations: TriangleAnnotation[], videoWidth: number, videoHeight: number): TriangleAnnotation | null {
   // Get active annotations at current time, sorted by creation order (latest first for better selection)
   const activeAnnotations = annotations
     .filter(a => currentTime >= a.start && currentTime <= a.end)
@@ -144,7 +156,7 @@ function findTriangleAtPosition(x: number, y: number, currentTime: number, annot
   
   // Check each active triangle to see if the click is inside it
   for (const annotation of activeAnnotations) {
-    if (isPointInTriangle(x, y, annotation)) {
+    if (isPointInTriangle(x, y, annotation, videoWidth, videoHeight)) {
       return annotation
     }
   }
@@ -341,7 +353,7 @@ function onOverlayClick(e: React.MouseEvent) {
   const y = (e.clientY - rect.top) / rect.height
 
   // First, check if we clicked on an existing triangle
-  const clickedTriangle = findTriangleAtPosition(x, y, currentTime, annotations)
+  const clickedTriangle = findTriangleAtPosition(x, y, currentTime, annotations, videoSize.width, videoSize.height)
   
   if (clickedTriangle) {
     // Clicked on an existing triangle - select it
@@ -546,25 +558,24 @@ function drawTriangleOnContext(
   height: number,
   tri: Pick<TriangleAnnotation, "x" | "y" | "size" | "strokeWidth" | "color">
 ) {
+  // Convert normalized coordinates to canvas coordinates
+  const centerX = tri.x * width
+  const centerY = tri.y * height
+  
+  // Calculate equilateral triangle size in pixels (use smaller dimension for consistent sizing)
+  // This ensures the triangle maintains its equilateral shape regardless of canvas aspect ratio
   const minDim = Math.min(width, height)
-  const sizePx = tri.size * minDim // This is the side length of the equilateral triangle
-  const ax = tri.x * width
-  const ay = tri.y * height
+  const sideLength = tri.size * minDim
   
-  // For an equilateral triangle with side length sizePx:
-  // - Height = sizePx * sqrt(3) / 2
-  // - Base width = sizePx
-  const triangleHeight = sizePx * Math.sqrt(3) / 2
-  const halfBase = sizePx / 2
-  
-  // Position the triangle so the center point (ax, ay) is the centroid
-  // Centroid is 1/3 of the height from the base
+  // Calculate equilateral triangle vertices
+  const triangleHeight = sideLength * Math.sqrt(3) / 2
+  const halfBase = sideLength / 2
   const centroidOffset = triangleHeight / 3
   
-  // Calculate the three vertices of the equilateral triangle
-  const p1 = { x: ax, y: ay - (triangleHeight - centroidOffset) } // Top vertex
-  const p2 = { x: ax - halfBase, y: ay + centroidOffset } // Bottom left
-  const p3 = { x: ax + halfBase, y: ay + centroidOffset } // Bottom right
+  // Triangle vertices in canvas coordinates
+  const p1 = { x: centerX, y: centerY - (triangleHeight - centroidOffset) } // Top vertex
+  const p2 = { x: centerX - halfBase, y: centerY + centroidOffset } // Bottom left
+  const p3 = { x: centerX + halfBase, y: centerY + centroidOffset } // Bottom right
 
   ctx.save()
   ctx.lineWidth = Math.max(1, (tri.strokeWidth * minDim) / 1080)
@@ -856,18 +867,34 @@ return (
                       onPointerMove={onAnnoPointerMove}
                       onPointerUp={onAnnoPointerUp}
                       onPointerCancel={onAnnoPointerUp}
-                      viewBox="0 0 100 100"
-                      preserveAspectRatio="none"
+                      viewBox={`0 0 ${videoSize.width} ${videoSize.height}`}
+                      preserveAspectRatio="xMidYMid meet"
                     >
                       {activeAnnotations.map((a) => {
-                        const apexX = a.x * 100
-                        const apexY = a.y * 100
-                        const sizeUnits = a.size * 100
-                        const baseHalf = sizeUnits / 2
-                        const baseY = apexY + sizeUnits
-                        const p1 = `${apexX},${apexY}`
-                        const p2 = `${apexX - baseHalf},${baseY}`
-                        const p3 = `${apexX + baseHalf},${baseY}`
+                        // Convert normalized coordinates to video pixel coordinates
+                        const centerX = a.x * videoSize.width
+                        const centerY = a.y * videoSize.height
+                        
+                        // Calculate equilateral triangle size in pixels (use smaller dimension for consistent sizing)
+                        const minDim = Math.min(videoSize.width, videoSize.height)
+                        const sideLength = a.size * minDim
+                        
+                        // Calculate equilateral triangle vertices
+                        const triangleHeight = sideLength * Math.sqrt(3) / 2
+                        const halfBase = sideLength / 2
+                        const centroidOffset = triangleHeight / 3
+                        
+                        // Triangle vertices in video pixel coordinates
+                        const p1X = centerX
+                        const p1Y = centerY - (triangleHeight - centroidOffset) // Top vertex
+                        const p2X = centerX - halfBase
+                        const p2Y = centerY + centroidOffset // Bottom left
+                        const p3X = centerX + halfBase
+                        const p3Y = centerY + centroidOffset // Bottom right
+                        
+                        const p1 = `${p1X},${p1Y}`
+                        const p2 = `${p2X},${p2Y}`
+                        const p3 = `${p3X},${p3Y}`
                         return (
                           <polygon
                             key={a.id}
