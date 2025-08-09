@@ -266,7 +266,7 @@ function addAnnotationAt(xNorm: number, yNorm: number) {
     id: getUUID(),
     x: clamp(xNorm, 0, 1),
     y: clamp(yNorm, 0, 1),
-    size: 0.06,                 
+    size: 0.03,                 
     color: "#c0c5ce",           // gray default
     strokeWidth: 5,             
     start,
@@ -428,14 +428,24 @@ function drawTriangleOnContext(
   tri: Pick<TriangleAnnotation, "x" | "y" | "size" | "strokeWidth" | "color">
 ) {
   const minDim = Math.min(width, height)
-  const sizePx = tri.size * minDim
+  const sizePx = tri.size * minDim // This is the side length of the equilateral triangle
   const ax = tri.x * width
   const ay = tri.y * height
+  
+  // For an equilateral triangle with side length sizePx:
+  // - Height = sizePx * sqrt(3) / 2
+  // - Base width = sizePx
+  const triangleHeight = sizePx * Math.sqrt(3) / 2
   const halfBase = sizePx / 2
-  const baseY = ay + sizePx
-  const p1 = { x: ax, y: ay }
-  const p2 = { x: ax - halfBase, y: baseY }
-  const p3 = { x: ax + halfBase, y: baseY }
+  
+  // Position the triangle so the center point (ax, ay) is the centroid
+  // Centroid is 1/3 of the height from the base
+  const centroidOffset = triangleHeight / 3
+  
+  // Calculate the three vertices of the equilateral triangle
+  const p1 = { x: ax, y: ay - (triangleHeight - centroidOffset) } // Top vertex
+  const p2 = { x: ax - halfBase, y: ay + centroidOffset } // Bottom left
+  const p3 = { x: ax + halfBase, y: ay + centroidOffset } // Bottom right
 
   ctx.save()
   ctx.lineWidth = Math.max(1, (tri.strokeWidth * minDim) / 1080)
