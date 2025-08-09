@@ -15,7 +15,7 @@ import { Play, Pause, FastForward, Rewind, Upload, Scissors, Download, Trash2, C
 import JSZip from "jszip"
 import { createViamClient, type ViamClient } from "@viamrobotics/sdk"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
-import { AnnotationTimeline, type TimelineAnnotation } from "./annotation-timeline"
+import { AnnotationTimeline, type TimelineAnnotation, type TriangleTrack } from "./annotation-timeline"
 
 type FrameInfo = {
 index: number
@@ -60,6 +60,96 @@ return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
   const v = c === "x" ? r : (r & 0x3) | 0x8
   return v.toString(16)
 })
+}
+
+function createTriangleTracks(annotations: TriangleAnnotation[]): TriangleTrack[] {
+  // Group annotations by triangle ID (we'll use a combination of position and color as a proxy for triangle identity)
+  const triangleMap = new Map<string, TriangleAnnotation[]>()
+  
+  annotations.forEach(annotation => {
+    // Create a unique triangle identifier based on position and color
+    // This assumes triangles at the same position with the same color are the same triangle
+    const triangleId = `${Math.round(annotation.x * 100)}_${Math.round(annotation.y * 100)}_${annotation.color}`
+    
+    if (!triangleMap.has(triangleId)) {
+      triangleMap.set(triangleId, [])
+    }
+    triangleMap.get(triangleId)!.push(annotation)
+  })
+  
+  // Convert to triangle tracks
+  const tracks: TriangleTrack[] = []
+  triangleMap.forEach((triangleAnnotations, triangleId) => {
+    // Sort annotations by start time
+    triangleAnnotations.sort((a, b) => a.start - b.start)
+    
+    // Create track label
+    const firstAnnotation = triangleAnnotations[0]
+    const triangleLabel = firstAnnotation.label || 
+      `Triangle (${Math.round(firstAnnotation.x * 100)}%, ${Math.round(firstAnnotation.y * 100)}%)`
+    
+    // Convert to timeline annotations
+    const timelineAnnotations: TimelineAnnotation[] = triangleAnnotations.map(annotation => ({
+      id: annotation.id,
+      start: annotation.start,
+      end: annotation.end,
+      color: annotation.color,
+      label: annotation.label
+    }))
+    
+    tracks.push({
+      triangleId,
+      triangleLabel,
+      color: firstAnnotation.color,
+      annotations: timelineAnnotations
+    })
+  })
+  
+  return tracks
+}
+
+// Helper function to check if a point is inside an equilateral triangle
+function isPointInTriangle(px: number, py: number, triangle: TriangleAnnotation): boolean {
+  // Calculate triangle vertices using the same logic as the drawing function
+  const sizePx = triangle.size
+  const triangleHeight = sizePx * Math.sqrt(3) / 2
+  const halfBase = sizePx / 2
+  const centroidOffset = triangleHeight / 3
+  
+  // Triangle vertices (normalized coordinates)
+  const ax = triangle.x // Top vertex
+  const ay = triangle.y - (triangleHeight - centroidOffset)
+  const bx = triangle.x - halfBase // Bottom left
+  const by = triangle.y + centroidOffset
+  const cx = triangle.x + halfBase // Bottom right  
+  const cy = triangle.y + centroidOffset
+  
+  // Use barycentric coordinate system to check if point is inside triangle
+  const denom = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+  if (Math.abs(denom) < 1e-10) return false // Degenerate triangle
+  
+  const a = ((by - cy) * (px - cx) + (cx - bx) * (py - cy)) / denom
+  const b = ((cy - ay) * (px - cx) + (ax - cx) * (py - cy)) / denom
+  const c = 1 - a - b
+  
+  return a >= 0 && b >= 0 && c >= 0
+}
+
+// Find triangle at the given position that's currently active
+function findTriangleAtPosition(x: number, y: number, currentTime: number, annotations: TriangleAnnotation[]): TriangleAnnotation | null {
+  // Get active annotations at current time, sorted by creation order (latest first for better selection)
+  const activeAnnotations = annotations
+    .filter(a => currentTime >= a.start && currentTime <= a.end)
+    .reverse() // Latest created triangles get priority for selection
+  
+  // Check each active triangle to see if the click is inside it
+  for (const annotation of activeAnnotations) {
+    if (isPointInTriangle(x, y, annotation)) {
+      return annotation
+    }
+  }
+  
+  return null
 }
 
 export function VideoEditor() {
@@ -239,7 +329,7 @@ function onTimelineSeek(t: number) {
   videoRef.current.currentTime = clamp(t, 0, duration)
 }
 
-// Click on overlay: move selected triangle, or add new with Shift (or when nothing selected)
+// Click on overlay: select existing triangle if clicked, or add new triangle if clicking empty area
 function onOverlayClick(e: React.MouseEvent) {
   if (!overlayLayerRef.current) return
   if (suppressClickRef.current) {
@@ -250,25 +340,54 @@ function onOverlayClick(e: React.MouseEvent) {
   const x = (e.clientX - rect.left) / rect.width
   const y = (e.clientY - rect.top) / rect.height
 
-  if (e.shiftKey || !selectedId) {
-    addAnnotationAt(x, y)
+  // First, check if we clicked on an existing triangle
+  const clickedTriangle = findTriangleAtPosition(x, y, currentTime, annotations)
+  
+  if (clickedTriangle) {
+    // Clicked on an existing triangle - select it
+    setSelectedId(clickedTriangle.id)
   } else {
-    setAnnotations((prev) =>
-      prev.map((a) => (a.id === selectedId ? { ...a, x: clamp(x, 0, 1), y: clamp(y, 0, 1) } : a))
-    )
+    // Clicked on empty area - create new triangle
+    addAnnotationAt(x, y)
   }
 }
 
 function addAnnotationAt(xNorm: number, yNorm: number) {
   const start = currentTime
   const end = clamp(currentTime + defaultAnnoDuration, 0, duration || currentTime + defaultAnnoDuration)
+
+  const defaultSize = 0.03
+  const defaultColor = "#c0c5ce"
+  const defaultStrokeWidth = 5
+  
+  const x = clamp(xNorm, 0, 1)
+  const y = clamp(yNorm, 0, 1)
+  
+  // Check if a triangle already exists at this position/color combination
+  const triangleId = `${Math.round(x * 100)}_${Math.round(y * 100)}_${defaultColor}`
+  const existingTriangle = annotations.find(a => {
+    const existingTriangleId = `${Math.round(a.x * 100)}_${Math.round(a.y * 100)}_${a.color}`
+    return existingTriangleId === triangleId
+  })
+  
+  if (existingTriangle) {
+    // Triangle already exists at this position - select it instead of creating a new one
+    setSelectedId(existingTriangle.id)
+    toast({
+      title: "Triangle already exists",
+      description: "A triangle already exists at this position. Selected existing triangle.",
+      variant: "default"
+    })
+    return
+  }
+  
   const anno: TriangleAnnotation = {
     id: getUUID(),
-    x: clamp(xNorm, 0, 1),
-    y: clamp(yNorm, 0, 1),
-    size: 0.03,                 
-    color: "#c0c5ce",           // gray default
-    strokeWidth: 5,             
+    x,
+    y,
+    size: defaultSize,                 
+    color: defaultColor,           // gray default
+    strokeWidth: defaultStrokeWidth,             
     start,
     end,
   }
@@ -858,13 +977,7 @@ return (
             duration={duration}
             currentTime={currentTime}
             onSeek={onTimelineSeek}
-            annotations={annotations.map<TimelineAnnotation>((a) => ({
-              id: a.id,
-              start: a.start,
-              end: a.end,
-              color: a.color,
-              label: a.label,
-            }))}
+            triangleTracks={createTriangleTracks(annotations)}
             selectedId={selectedId}
             onSelect={setSelectedId}
             onChangeTime={updateAnnoTime}

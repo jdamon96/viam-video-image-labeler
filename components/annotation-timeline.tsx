@@ -2,6 +2,8 @@
 
 import * as React from "react"
 import { cn } from "@/lib/utils"
+import { ChevronDown, ChevronRight, Video, Triangle } from "lucide-react"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 
 export type TimelineAnnotation = {
   id: string
@@ -9,6 +11,13 @@ export type TimelineAnnotation = {
   end: number
   color: string
   label?: string
+}
+
+export type TriangleTrack = {
+  triangleId: string
+  triangleLabel: string
+  color: string
+  annotations: TimelineAnnotation[]
 }
 
 type DragState =
@@ -26,7 +35,7 @@ export function AnnotationTimeline({
   duration,
   currentTime,
   onSeek,
-  annotations,
+  triangleTracks,
   selectedId,
   onSelect,
   onChangeTime,
@@ -39,7 +48,7 @@ export function AnnotationTimeline({
   duration: number
   currentTime: number
   onSeek: (t: number) => void
-  annotations: TimelineAnnotation[]
+  triangleTracks: TriangleTrack[]
   selectedId: string | null
   onSelect: (id: string) => void
   onChangeTime: (id: string, next: { start?: number; end?: number }) => void
@@ -52,6 +61,7 @@ export function AnnotationTimeline({
   const containerRef = React.useRef<HTMLDivElement | null>(null)
   const [width, setWidth] = React.useState(600)
   const [drag, setDrag] = React.useState<DragState>({ type: "none" })
+  const [triangleTracksCollapsed, setTriangleTracksCollapsed] = React.useState<boolean>(false)
 
   React.useEffect(() => {
     const el = containerRef.current
@@ -162,6 +172,10 @@ export function AnnotationTimeline({
     setDrag({ type: "selection-right", startX: e.clientX, origStart: selection.start, origEnd: selection.end })
   }
 
+  const toggleTriangleTracksCollapse = () => {
+    setTriangleTracksCollapsed(prev => !prev)
+  }
+
   const playheadLeft = `${duration > 0 ? (currentTime / duration) * 100 : 0}%`
 
   // Derived selection style
@@ -176,118 +190,166 @@ export function AnnotationTimeline({
       onPointerUp={onScrubPointerUp}
       onPointerCancel={onScrubPointerUp}
     >
-      {/* Scrub bar (also selection-creation surface) */}
-      <div
-        className={cn(
-          "relative h-8 rounded-md border bg-neutral-100",
-          selectMode ? "ring-2 ring-emerald-500/70" : ""
-        )}
-        onPointerDown={onScrubPointerDown}
-        aria-label="Timeline scrub bar"
-      >
-        {/* ticks (every 10% for simplicity) */}
-        {Array.from({ length: 11 }).map((_, i) => (
-          <div
-            key={i}
-            className="absolute top-0 h-full border-r border-neutral-200"
-            style={{ left: `${(i / 10) * 100}%` }}
-          />
-        ))}
-
-        {/* selection band (on scrub bar) */}
-        {selection ? (
-          <div
-            className="absolute top-0 h-full"
-            style={{
-              left: selectionLeft,
-              width: selectionWidth,
-            }}
-          >
-            <div
-              className="absolute inset-0 bg-emerald-500/15 border-y border-emerald-500/30 cursor-grab active:cursor-grabbing"
-              onPointerDown={startSelectionMove}
-              title={`Selection ${selection.start.toFixed(2)}s → ${selection.end.toFixed(2)}s`}
-            />
-            {/* left handle */}
-            <div
-              className="absolute left-0 top-0 h-full w-2 bg-emerald-500/40 cursor-ew-resize"
-              onPointerDown={startSelectionLeft}
-              aria-label="Resize selection start"
-            />
-            {/* right handle */}
-            <div
-              className="absolute right-0 top-0 h-full w-2 bg-emerald-500/40 cursor-ew-resize"
-              onPointerDown={startSelectionRight}
-              aria-label="Resize selection end"
-            />
-          </div>
-        ) : null}
-
-        {/* playhead */}
+      {/* Video track (scrub bar + selection) */}
+      <div className="space-y-1">
+        {/* Video track header */}
+        <div className="flex items-center gap-2 px-2 py-1 text-sm font-medium text-neutral-700">
+          <Video className="h-4 w-4" />
+          <span>Video Track</span>
+        </div>
+        
+        {/* Scrub bar (also selection-creation surface) */}
         <div
-          className="absolute top-0 h-full w-0.5 bg-emerald-600"
-          style={{ left: playheadLeft }}
-          aria-label="Playhead"
-        />
-      </div>
-
-      {/* Triangle track */}
-      <div className="relative mt-2 h-10 rounded-md border bg-white overflow-hidden" aria-label="Triangle track">
-        {annotations.map((a) => {
-          const leftPct = (a.start / Math.max(1e-6, duration)) * 100
-          const wPct = ((a.end - a.start) / Math.max(1e-6, duration)) * 100
-          return (
+          className={cn(
+            "relative h-8 rounded-md border bg-neutral-100",
+            selectMode ? "ring-2 ring-emerald-500/70" : ""
+          )}
+          onPointerDown={onScrubPointerDown}
+          aria-label="Timeline scrub bar"
+        >
+          {/* ticks (every 10% for simplicity) */}
+          {Array.from({ length: 11 }).map((_, i) => (
             <div
-              key={a.id}
-              className={cn(
-                "absolute top-1 h-8 rounded-md border cursor-grab active:cursor-grabbing",
-                selectedId === a.id ? "ring-2 ring-emerald-500" : ""
-              )}
+              key={i}
+              className="absolute top-0 h-full border-r border-neutral-200"
+              style={{ left: `${(i / 10) * 100}%` }}
+            />
+          ))}
+
+          {/* selection band (on scrub bar) */}
+          {selection ? (
+            <div
+              className="absolute top-0 h-full"
               style={{
-                left: `${leftPct}%`,
-                width: `max(6px, ${wPct}%)`,
-                borderColor: a.color,
-                background: "linear-gradient(to right, rgba(0,0,0,0.04), rgba(0,0,0,0.02))",
+                left: selectionLeft,
+                width: selectionWidth,
               }}
-              onClick={(e) => {
-                e.stopPropagation()
-                onSelect(a.id)
-              }}
-              onPointerDown={(e) => {
-                e.stopPropagation()
-                onSelect(a.id)
-                startMove(a.id, e, a.start, a.end)
-              }}
-              title={`${a.label ?? "Triangle"} ${a.start.toFixed(2)}s → ${a.end.toFixed(2)}s`}
             >
+              <div
+                className="absolute inset-0 bg-emerald-500/15 border-y border-emerald-500/30 cursor-grab active:cursor-grabbing"
+                onPointerDown={startSelectionMove}
+                title={`Selection ${selection.start.toFixed(2)}s → ${selection.end.toFixed(2)}s`}
+              />
               {/* left handle */}
               <div
-                className="absolute left-0 top-0 h-full w-2 cursor-ew-resize bg-[rgba(0,0,0,0.05)]"
-                onPointerDown={(e) => {
-                  e.stopPropagation()
-                  onSelect(a.id)
-                  startResizeLeft(a.id, e, a.start, a.end)
-                }}
+                className="absolute left-0 top-0 h-full w-2 bg-emerald-500/40 cursor-ew-resize"
+                onPointerDown={startSelectionLeft}
+                aria-label="Resize selection start"
               />
               {/* right handle */}
               <div
-                className="absolute right-0 top-0 h-full w-2 cursor-ew-resize bg-[rgba(0,0,0,0.05)]"
-                onPointerDown={(e) => {
-                  e.stopPropagation()
-                  onSelect(a.id)
-                  startResizeRight(a.id, e, a.start, a.end)
-                }}
-              />
-              {/* color strip */}
-              <div
-                className="absolute left-0 top-0 h-full"
-                style={{ width: 4, backgroundColor: a.color, borderTopLeftRadius: 6, borderBottomLeftRadius: 6 }}
-                aria-hidden
+                className="absolute right-0 top-0 h-full w-2 bg-emerald-500/40 cursor-ew-resize"
+                onPointerDown={startSelectionRight}
+                aria-label="Resize selection end"
               />
             </div>
-          )
-        })}
+          ) : null}
+
+          {/* playhead */}
+          <div
+            className="absolute top-0 h-full w-0.5 bg-emerald-600"
+            style={{ left: playheadLeft }}
+            aria-label="Playhead"
+          />
+        </div>
       </div>
+
+      {/* Triangle tracks */}
+      {triangleTracks.length > 0 && (
+        <div className="mt-3">
+          <Collapsible open={!triangleTracksCollapsed} onOpenChange={toggleTriangleTracksCollapse}>
+            {/* Triangle tracks group header */}
+            <CollapsibleTrigger className="flex items-center gap-2 px-2 py-1 text-sm font-medium text-neutral-700 hover:bg-neutral-50 rounded w-full">
+              {triangleTracksCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              <Triangle className="h-4 w-4 text-neutral-600" />
+              <span>Triangle Tracks</span>
+              <span className="text-xs text-neutral-500">({triangleTracks.length} triangle{triangleTracks.length !== 1 ? 's' : ''})</span>
+            </CollapsibleTrigger>
+            
+            {/* Triangle tracks content */}
+            <CollapsibleContent>
+              <div className="space-y-2 mt-2">
+                {triangleTracks.map((track) => (
+                  <div key={track.triangleId} className="space-y-1">
+                    {/* Individual track header (no collapse - just label) */}
+                    <div className="flex items-center gap-2 px-2 py-1 text-sm font-medium text-neutral-700 ml-6">
+                      <Triangle className="h-4 w-4" style={{ color: track.color }} />
+                      <span>{track.triangleLabel}</span>
+                      <span className="text-xs text-neutral-500">({track.annotations.length} annotation{track.annotations.length !== 1 ? 's' : ''})</span>
+                    </div>
+                    
+                    {/* Track timeline - aligned with video track */}
+                    <div className="relative h-10 rounded-md border bg-white overflow-hidden" aria-label={`${track.triangleLabel} track`}>
+                      {/* Playhead for this track */}
+                      <div
+                        className="absolute top-0 h-full w-0.5 bg-emerald-600 z-10"
+                        style={{ left: playheadLeft }}
+                        aria-label="Playhead"
+                      />
+                      
+                      {/* Annotations for this track */}
+                      {track.annotations.map((a) => {
+                        const leftPct = (a.start / Math.max(1e-6, duration)) * 100
+                        const wPct = ((a.end - a.start) / Math.max(1e-6, duration)) * 100
+                        return (
+                          <div
+                            key={a.id}
+                            className={cn(
+                              "absolute top-1 h-8 rounded-md border cursor-grab active:cursor-grabbing",
+                              selectedId === a.id ? "ring-2 ring-emerald-500" : ""
+                            )}
+                            style={{
+                              left: `${leftPct}%`,
+                              width: `max(6px, ${wPct}%)`,
+                              borderColor: a.color,
+                              background: "linear-gradient(to right, rgba(0,0,0,0.04), rgba(0,0,0,0.02))",
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              onSelect(a.id)
+                            }}
+                            onPointerDown={(e) => {
+                              e.stopPropagation()
+                              onSelect(a.id)
+                              startMove(a.id, e, a.start, a.end)
+                            }}
+                            title={`${a.label ?? "Triangle"} ${a.start.toFixed(2)}s → ${a.end.toFixed(2)}s`}
+                          >
+                            {/* left handle */}
+                            <div
+                              className="absolute left-0 top-0 h-full w-2 cursor-ew-resize bg-[rgba(0,0,0,0.05)]"
+                              onPointerDown={(e) => {
+                                e.stopPropagation()
+                                onSelect(a.id)
+                                startResizeLeft(a.id, e, a.start, a.end)
+                              }}
+                            />
+                            {/* right handle */}
+                            <div
+                              className="absolute right-0 top-0 h-full w-2 cursor-ew-resize bg-[rgba(0,0,0,0.05)]"
+                              onPointerDown={(e) => {
+                                e.stopPropagation()
+                                onSelect(a.id)
+                                startResizeRight(a.id, e, a.start, a.end)
+                              }}
+                            />
+                            {/* color strip */}
+                            <div
+                              className="absolute left-0 top-0 h-full"
+                              style={{ width: 4, backgroundColor: a.color, borderTopLeftRadius: 6, borderBottomLeftRadius: 6 }}
+                              aria-hidden
+                            />
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+        </div>
+      )}
     </div>
   )
 }
