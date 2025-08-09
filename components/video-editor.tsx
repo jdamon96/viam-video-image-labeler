@@ -13,7 +13,6 @@ import { toast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 import { Play, Pause, FastForward, Rewind, Upload, Scissors, Download, Trash2, Clock, TextSelectIcon as Selection } from 'lucide-react'
 import JSZip from "jszip"
-// Viam SDK
 import { createViamClient, type ViamClient } from "@viamrobotics/sdk"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { AnnotationTimeline, type TimelineAnnotation } from "./annotation-timeline"
@@ -31,7 +30,7 @@ x: number // normalized [0..1]
 y: number // normalized [0..1]
 size: number // normalized size relative to min(videoWidth, videoHeight)
 color: string
-strokeWidth: number // reference px at 1080p, scaled by resolution
+strokeWidth: number
 start: number
 end: number
 label?: string
@@ -267,9 +266,9 @@ function addAnnotationAt(xNorm: number, yNorm: number) {
     id: getUUID(),
     x: clamp(xNorm, 0, 1),
     y: clamp(yNorm, 0, 1),
-    size: 0.06,                 // smaller default
-    color: "#6b7280",           // gray-500 default
-    strokeWidth: 5,             // thicker default line (scaled in canvas)
+    size: 0.06,                 
+    color: "#c0c5ce",           // gray default
+    strokeWidth: 5,             
     start,
     end,
   }
@@ -439,7 +438,6 @@ function drawTriangleOnContext(
   const p3 = { x: ax + halfBase, y: baseY }
 
   ctx.save()
-  // Thicker stroke based on tri.strokeWidth at 1080p reference
   ctx.lineWidth = Math.max(1, (tri.strokeWidth * minDim) / 1080)
   ctx.strokeStyle = tri.color
   ctx.fillStyle = "rgba(0,0,0,0)"
@@ -903,7 +901,7 @@ return (
                     <Label className="text-xs">Color</Label>
                     <div className="flex gap-1">
                       {[
-                        { c: "#6b7280", label: "Gray" },
+                        { c: "#c0c5ce", label: "Gray" },
                         { c: "#f97316", label: "Orange" },
                         { c: "#10b981", label: "Green" },
                         { c: "#ef4444", label: "Red" },
